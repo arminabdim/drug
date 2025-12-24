@@ -1,22 +1,44 @@
 
 import { Medicine } from "./types";
 
-const DB_KEY = "pharma_base_db";
+const DB_KEY = "pharma_base_db_v2"; // تغییر ورژن برای جلوگیری از تداخل با داده‌های قدیمی
 const SETTINGS_KEY = "pharma_base_settings";
+
+// متد کمکی برای کدگذاری ایمن متن‌های فارسی در Base64
+const b64EncodeUnicode = (str: string) => {
+  return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (match, p1) => {
+    return String.fromCharCode(parseInt(p1, 16));
+  }));
+};
+
+const b64DecodeUnicode = (str: string) => {
+  return decodeURIComponent(atob(str).split('').map((c) => {
+    return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+  }).join(''));
+};
 
 export const getLocalDB = (): Medicine[] => {
   const data = localStorage.getItem(DB_KEY);
   if (!data) return [];
   try {
-    return JSON.parse(atob(data)); 
-  } catch {
+    const decoded = b64DecodeUnicode(data);
+    return JSON.parse(decoded);
+  } catch (e) {
+    console.error("خطا در بارگذاری دیتابیس:", e);
     return [];
   }
 };
 
 export const saveToLocalDB = (medicines: Medicine[]) => {
-  const encrypted = btoa(JSON.stringify(medicines));
-  localStorage.setItem(DB_KEY, encrypted);
+  try {
+    const jsonStr = JSON.stringify(medicines);
+    const encoded = b64EncodeUnicode(jsonStr);
+    localStorage.setItem(DB_KEY, encoded);
+    return true;
+  } catch (e) {
+    console.error("خطا در ذخیره‌سازی دیتابیس (احتمال پر شدن حافظه مرورگر):", e);
+    return false;
+  }
 };
 
 export const getAppSettings = () => {
@@ -31,21 +53,21 @@ export const saveAppSettings = (settings: { batchSize: number }) => {
 export const exportDB = () => {
   const data = localStorage.getItem(DB_KEY);
   if (!data) return;
-  const blob = new Blob([data], { type: "application/json" });
+  const blob = new Blob([data], { type: "text/plain" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `pharmabase_backup_${new Date().toISOString().split('T')[0]}.json`;
+  a.download = `PharmaBase_Backup_${new Date().toLocaleDateString('fa-IR').replace(/\//g, '-')}.pharma`;
   a.click();
 };
 
 export const exportToCSV = (medicines: Medicine[]) => {
-  let csvContent = "\uFEFF"; // UTF-8 BOM for Excel Farsi support
-  csvContent += "نام ژنریک,دسته بندی,نام شرکت,دوز,شکل,قیمت,وضعیت کمبود\n";
+  let csvContent = "\uFEFF"; // BOM for UTF-8 Support in Excel
+  csvContent += "نام ژنریک,دسته درمانی,تولیدکننده,دوز,شکل مصرف,قیمت (ریال),وضعیت بازار,تاریخ بروزرسانی\n";
 
   medicines.forEach(med => {
     med.variants.forEach(v => {
-      csvContent += `"${med.genericName}","${med.category}","${v.manufacturer}","${v.dosage}","${v.form}",${v.price},"${v.isShortage ? 'کمیاب' : 'موجود'}"\n`;
+      csvContent += `"${med.genericName}","${med.category}","${v.manufacturer}","${v.dosage}","${v.form}",${v.price},"${v.isShortage ? 'کمیاب' : 'موجود'}","${new Date(med.lastUpdated).toLocaleDateString('fa-IR')}"\n`;
     });
   });
 
@@ -53,13 +75,14 @@ export const exportToCSV = (medicines: Medicine[]) => {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.setAttribute("href", url);
-  link.setAttribute("download", `pharma_report_${new Date().toISOString().split('T')[0]}.csv`);
+  link.setAttribute("download", `گزارش_جامع_دارویی_${new Date().getTime()}.csv`);
   link.click();
 };
 
 export const importDB = (fileContent: string) => {
   try {
-    JSON.parse(atob(fileContent));
+    const decoded = b64DecodeUnicode(fileContent);
+    JSON.parse(decoded);
     localStorage.setItem(DB_KEY, fileContent);
     return true;
   } catch {
