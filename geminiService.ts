@@ -11,6 +11,7 @@ const GROUPED_MEDICINE_SCHEMA = {
     properties: {
       genericName: { type: Type.STRING, description: "نام عمومی و ژنریک دارو به فارسی" },
       category: { type: Type.STRING, description: "دسته بندی درمانی (مثلاً آنتی بیوتیک، مسکن، قلبی و...)" },
+      indications: { type: Type.STRING, description: "موارد مصرف اصلی دارو به فارسی" },
       variants: {
         type: Type.ARRAY,
         items: {
@@ -26,7 +27,7 @@ const GROUPED_MEDICINE_SCHEMA = {
         }
       }
     },
-    required: ["genericName", "category", "variants"]
+    required: ["genericName", "category", "variants", "indications"]
   }
 };
 
@@ -34,7 +35,7 @@ export const syncMedicinesWithAI = async (batchSize: number): Promise<Medicine[]
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `به عنوان یک متخصص فارماکولوژی، لیستی از دقیقاً ${batchSize} داروی ژنریک مختلف و پرمصرف ایران را با تکیه بر منابع دارویاب، تی‌تک و سازمان غذا و دارو تهیه کن. داده‌ها را برای هر نام ژنریک تجمیع کن تا هیچ نام عمومی تکرار نشود. تمام تولیدکنندگان برتر و قیمت‌های جدید را درج کن.`,
+      contents: `به عنوان یک متخصص فارماکولوژی، لیستی از دقیقاً ${batchSize} داروی ژنریک مختلف ایران را تهیه کن. برای هر دارو حتماً "indications" (موارد مصرف) را بنویس.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: GROUPED_MEDICINE_SCHEMA,
@@ -53,17 +54,28 @@ export const syncMedicinesWithAI = async (batchSize: number): Promise<Medicine[]
   }
 };
 
+export const getPharmacyStrategy = async (specialists: string, currentMeds: string) => {
+  const response = await ai.models.generateContent({
+    model: "gemini-3-pro-preview",
+    contents: `در اطراف داروخانه من این متخصصان حضور دارند: "${specialists}". بر اساس این لیست و داروهای موجود من: "${currentMeds}"، بهترین استراتژی خرید و چیدمان داروخانه را ارائه بده. چه داروهایی را باید بیشتر سفارش دهم؟ تحلیل تجاری ارائه بده.`,
+    config: { thinkingConfig: { thinkingBudget: 20000 } }
+  });
+  return response.text;
+};
+
 export const fetchShortageInsights = async (): Promise<ShortageInsight> => {
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: "آخرین گزارش‌های رسمی و اخبار یک ماه اخیر درباره علل کمبود دارو در ایران و لیست اقلام بحرانی را جستجو و خلاصه کن.",
+      contents: "آخرین اخبار کمبود دارو در ایران در ماه جاری را جستجو کن.",
       config: { tools: [{ googleSearch: {} }] },
     });
-    const text = response.text || "اطلاعاتی یافت نشد.";
-    const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-    const sources = chunks.filter((c: any) => c.web).map((c: any) => ({ title: c.web.title, uri: c.web.uri }));
-    return { text, sources };
+    return { 
+      text: response.text || "", 
+      sources: (response.candidates?.[0]?.groundingMetadata?.groundingChunks || [])
+        .filter((c: any) => c.web)
+        .map((c: any) => ({ title: c.web.title, uri: c.web.uri }))
+    };
   } catch (error) {
     return { text: "خطا در دریافت تحلیل آنلاین.", sources: [] };
   }
@@ -72,7 +84,7 @@ export const fetchShortageInsights = async (): Promise<ShortageInsight> => {
 export const getAIResponse = async (message: string) => {
   const chat = ai.chats.create({
     model: 'gemini-3-pro-preview',
-    config: { systemInstruction: "You are PharmaAssistant, a professional pharmacology expert in Iran. Help users with drug questions using Farsi language. Be concise and use official names." }
+    config: { systemInstruction: "You are PharmaAssistant, a professional pharmacology expert in Iran." }
   });
   const response = await chat.sendMessage({ message });
   return response.text;
@@ -81,8 +93,8 @@ export const getAIResponse = async (message: string) => {
 export const getDeepAnalysis = async (drugName: string) => {
   const response = await ai.models.generateContent({
     model: "gemini-3-pro-preview",
-    contents: `تحلیل عمیق فارماکولوژیک برای "${drugName}" شامل تداخلات، موارد منع مصرف و دوزهای استاندارد بر اساس فارماکوپه ایران.`,
-    config: { thinkingConfig: { thinkingBudget: 32768 } }
+    contents: `تحلیل عمیق فارماکولوژیک برای "${drugName}" بر اساس فارماکوپه ایران.`,
+    config: { thinkingConfig: { thinkingBudget: 15000 } }
   });
   return response.text;
 };

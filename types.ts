@@ -13,14 +13,14 @@ export interface Medicine {
   variants: MedicineVariant[];
   category: string;
   lastUpdated: string;
+  indications?: string; // موارد مصرف
 }
 
 export enum ViewType {
   DASHBOARD = 'DASHBOARD',
   INVENTORY = 'INVENTORY',
-  CATEGORIES = 'CATEGORIES',
   SHORTAGES = 'SHORTAGES',
-  ADD_NEW = 'ADD_NEW',
+  STRATEGY = 'STRATEGY',
   SETTINGS = 'SETTINGS'
 }
 
